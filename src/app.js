@@ -35,7 +35,7 @@ import videoRouter from "./routes/video.routes.js"
 // app.use("/users", userRouter)
 app.use("/api/v1/users",userRouter)
 
-app.use("/api/videos", videoRouter)  
+app.use("/api/v1/videos", videoRouter)  
 
 
 
