@@ -213,12 +213,105 @@ const updateVideo = asyncHandler( async(req, res)=>{
            )
 })
 
+const deleteVideo = asyncHandler( async(req,res)=>{
+
+    // Steps To Delete a Video
+
+    //1. Get the video id from params
+    //2. Apply Validations 
+    //3. Find the video and detail it from DB
+    //4. Send response 
+
+    //1.
+    const {videoId} = req.params
+
+    //2.
+    if(!videoId){
+        throw new ApiError(400, "Video Id Is Missing")
+    }
+
+    //TODO : Find if the video owner is the user itself , if yes then proceed
+    
+    //3.
+    const videoToDelete = await Video.findByIdAndDelete(videoId)
+
+    if(!videoToDelete){
+        throw new ApiError(400,"Failed to delete video from DB")
+    }
+    
+
+    //TODO: Remove likes and comments from Like and Comment Model
+
+    //4.
+    return res
+           .status(200)
+           .json(
+            new ApiResponse(200,{},"Video Deleted Successfully")
+           )
+
+})
+
+
+const togglePublishStatus = asyncHandler( async (req,res)=>{
+
+    // Steps to toggle visibility
+
+    //1. Get the video id from params 
+    //2. Apply Validations 
+    //3. Find and update the video visibility
+    //4. Send response 
+
+    //1. 
+    const {videoId} = req.params
+
+    //2. 
+    if(!videoId){
+        throw new ApiError(400, "Video Id Is Missing")
+    }
+
+    // TODO : Check if the video owner is the user trying to update , if yes then only proceed
+
+    //3. 
+    const existedVideo = await Video.findById(videoId)
+
+    if(!existedVideo){
+        throw new ApiError(401, "Video Not Found")
+    }
+
+    let status = existedVideo?.isPublished 
+    status = !status
+
+    const video = await Video.findByIdAndUpdate(
+        videoId,
+        {
+            isPublished: status
+        },
+        {
+            new: true
+        }
+    )
+
+
+    if(!video){
+        throw new ApiError(400, " Couldn't Find the Video in DB")
+    }
+
+    //4.
+
+    return res
+           .status(200)
+           .json(
+            new ApiResponse(200, video, "Toggle Published Updated Successfully")
+           )
+})
 
 export {
     getAllVideos,
     publishAVideo,
     getVideoById,
-    updateVideo
+    updateVideo,
+    deleteVideo,
+    togglePublishStatus
 }
 
 
