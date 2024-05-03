@@ -4,6 +4,9 @@ import { ApiError } from "../utlis/ApiError.js";
 import { ApiResponse } from "../utlis/ApiResponse.js";
 import {Video} from "../models/video.model.js"
 import { uploadOnCloudinary, deleteFromCloudinary } from "../utlis/cloudinary.js";
+import { User } from "../models/user.model.js";
+import {Like} from "../models/like.model.js"
+import {Comment} from "../models/comment.model.js"
 
  
 const getAllVideos = asyncHandler(async(req,res)=>{
@@ -78,7 +81,8 @@ const publishAVideo = asyncHandler(async(req, res)=>{
         videoFile : videoFile?.url || "",
         thumbnail : thumbnail?.url || "",
         isPublished : true,
-        duration : videoFile?.duration || 0
+        duration : videoFile?.duration || 0,
+        owner : req.user?._id
     })
 
     //9.
@@ -96,9 +100,10 @@ const getVideoById = asyncHandler(async(req, res)=>{
 
     //1. Get the videoId from params
     //2. Apply Validation 
-    //3. Get video details from DB
+    //3. Get video details from DB using pipelines
     //4. Apply validation on the output
-    //5. Send response
+    //5. Increase the view count and add video to user watch history
+    //6. Send reponse
 
 
     //1.
@@ -110,18 +115,180 @@ const getVideoById = asyncHandler(async(req, res)=>{
     }
 
     //3.
-    const video = await Video.findById(videoId)
+    const video = await Video.aggregate([
+        
+        // filter the video id
+        {
+            $match :{
+                _id : new mongoose.Types.ObjectId(videoId)
+            }
+        },
 
+        //add likes from likes schema 
+        {
+            $lookup :{
+                from :"likes",
+                localField:"_id",
+                foreignField:"video",
+                as : "likes",
+            }
+        },
+
+        //add comments 
+        {
+            $lookup :{
+                from :"comments",
+                localField:"_id",
+                foreignField : "video",
+                as: "comments",
+
+            }
+        },
+
+        //add owner -> username, avatar, subscibers , isSubscribed , isLiked
+        {
+            $lookup :{
+                from : "users",
+                localField :"owner",
+                foreignField :"_id",
+                as : "onwer",
+                pipeline :[
+
+                    
+                        // user with subscription schema
+                    { 
+                        
+                        $lookup: {
+
+                            from : "subscriptions",
+                            localField:"_id",
+                            foreignField:"channel",
+                            as: "subscribers"
+
+                        },
+                    },
+
+                    //add fields to onwner
+                    {
+                        $addFields :{
+                            
+                            subscriberCount :{
+                                $size : "$subscribers"
+                            },
+
+                            isSubscribed :{
+
+                                $cond :{
+
+                                    $if :{ $in : [req.user?._id, "$subscribers.subscriber"]},
+                                    then: true,
+                                    else: false
+                                }
+                            }
+                        }
+                    },
+
+                    //send required fields only
+                    {
+                        $project :{
+                        username : 1,
+                        avatar : 1,
+                        subscriberCount:1,
+                        isSubscribed:1
+                        
+                    }
+                    }
+
+                        
+
+                    
+                ]
+            }
+        },
+ 
+        //add fields such as likesCount
+        {
+
+            $addFields:{
+
+                likesCount :{
+                    $size : "$likes"
+                },
+
+                owner :{
+                    $first : "$owner"
+                },
+
+                comments : {
+                  
+                  $first : "$comments"  
+
+                },
+
+                isLiked :{
+
+                    $cond :{
+
+                        if : { $in : [req.user?._id, "$likes.likedBy" ]},
+                        then : true,
+                        else:  false
+                    }
+                }
+
+            }
+
+        },
+
+        //only pass required fields 
+        {
+            $projects :{
+
+                title : 1, 
+                description :1,
+                videoFile :1, 
+                thumbnail:1,
+                owner :1,
+                likesCount:1,
+                isLiked:1,
+                duration :1,
+                views:1,
+                isPublished:1,
+                comments:1
+
+
+            }
+        }
+
+
+
+    ])
+
+
+
+    
     //4
     if(!video){
         throw new ApiError(401, "Invalid Video Id")
     }
 
-    //5
+    //5.
+    await Video.findByIdAndUpdate(videoId, {
+        $inc : {
+            views : 1
+        }
+    })
+
+    await User.findByIdAndUpdate(req.user?._id, {
+        $addToSet : {
+            watchHistory : videoId
+        }
+    })
+
+    //6
     return res
            .status(200)
            .json(
-            new ApiResponse(200, video, "Video Fetched Successfully")
+            new ApiResponse(200, video[0], "Video Fetched Successfully")
            )
 
 })
@@ -220,6 +387,7 @@ const deleteVideo = asyncHandler( async(req,res)=>{
     //1. Get the video id from params
     //2. Apply Validations 
     //3. Find the video and detail it from DB
+    //4. Delete documents from likes and comments collection of the current video
     //4. Send response 
 
     //1.
@@ -242,7 +410,19 @@ const deleteVideo = asyncHandler( async(req,res)=>{
 
     //TODO: Remove likes and comments from Like and Comment Model
 
-    //4.
+
+    //4. 
+    await Like.deleteMany({
+        
+        //condition
+        video : videoId,
+    })
+
+    await Comment.deleteMany({
+        video:videoId,
+    })
+
+    //5.
     return res
            .status(200)
            .json(
