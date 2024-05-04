@@ -1,4 +1,4 @@
-import mongoose from "mongoose";
+import mongoose, { isValidObjectId } from "mongoose";
 import { asyncHandler } from "../utlis/asyncHandler.js";
 import { ApiError } from "../utlis/ApiError.js";
 import { ApiResponse } from "../utlis/ApiResponse.js";
@@ -8,9 +8,142 @@ import { User } from "../models/user.model.js";
 import {Like} from "../models/like.model.js"
 import {Comment} from "../models/comment.model.js"
 
+
  
 const getAllVideos = asyncHandler(async(req,res)=>{
 
+
+    //Steps to Get all videos for a channel/user
+
+    //1. Get the required data from query -> page, limit, sortBy, sortType, query , userId
+    //2. Apply validation on user Id
+    //3. Define index for search ( on title and description only)
+    //4. Use pipelines to get videos from DB defining sortBy and sortType also
+    //5. Apply pagination queries on the output
+    //6. Apply validation 
+    //7. Send response
+
+
+    //1.
+    const {page =1, limit =10, query, sortBy, sortType, userId} = req.query 
+
+    //2. 
+    if(!userId){
+
+        throw new ApiError(400, "User is Missing")
+    }
+
+    if(userId){
+        if(!isValidObjectId(userId)){
+        
+            throw new ApiError(400, "Invalid user : User is not present in DB")
+        }
+    }
+
+    //3. 
+    const pipeline = []
+
+    //4.
+    // -- using index to search query, if query is giving
+    if(query){
+        pipeline.push({
+
+            $search: {
+                index : "search-videos",
+                text : {
+    
+                    query : query,
+                    path :["title","description"]
+    
+                }
+            }
+    
+        })
+    }
+
+
+    //-- filter videos
+    pipeline.push({
+        $match : {
+            owner : new mongoose.Types.ObjectId(userId),
+            isPublished : true
+        }
+    })
+
+    // -- add sorting 
+    if(sortBy && sortType){
+
+        pipeline.push({
+            $sort : {
+                [sortBy] : sortType ==="asc"? 1 : -1
+            }
+        })
+    } else {
+        pipeline.push({
+            $sort : {
+                createdAt : -1
+            }
+        })
+    }
+
+
+    //-- add owners fields in video object
+
+    pipeline.push(
+        {
+
+        $lookup :{
+            from : "users",
+            localField : "owner",
+            foreignField:"_id",
+            as : "creators",
+
+            pipeline :[ 
+                {
+                    $project : {
+                        username: 1,
+                        avatar:1,
+                        //subscriber count
+                    }
+                }
+            ]
+        }
+
+    },
+
+    {
+        //spread all the user creator arrays
+        $unwind :  "$creators"
+    }
+
+    )
+    
+
+    //TODO : Convert this to single aggregate query
+     
+    const aggregatedVideos = await Video.aggregate(pipeline)
+
+    //5.
+
+    const options = {
+        page : parseInt(page, 10),
+        limit : parseInt(limit, 10)
+    }
+
+    const videos = await Video.aggregatePaginate(aggregatedVideos,options)
+
+
+    //6. 
+    if(!videos){
+        throw new ApiError(400, "Couldn't get the videos ")
+    }
+
+    //7. 
+    return res
+           .status(200)
+           .json(
+            new ApiResponse(200, videos, "All Videos Fetched Successfully")
+           )
 })
 
 
