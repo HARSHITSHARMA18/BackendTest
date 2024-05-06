@@ -268,6 +268,7 @@ const getVideoById = asyncHandler(async(req, res)=>{
         },
 
         //add comments 
+        // CHECK : Comments in get video 
         {
             $lookup :{
                 from :"comments",
@@ -284,7 +285,7 @@ const getVideoById = asyncHandler(async(req, res)=>{
                 from : "users",
                 localField :"owner",
                 foreignField :"_id",
-                as : "onwer",
+                as : "owner",
                 pipeline :[
 
                     
@@ -313,7 +314,7 @@ const getVideoById = asyncHandler(async(req, res)=>{
 
                                 $cond :{
 
-                                    $if :{ $in : [req.user?._id, "$subscribers.subscriber"]},
+                                    if :{ $in : [req.user?._id, "$subscribers.subscriber"]},
                                     then: true,
                                     else: false
                                 }
@@ -336,8 +337,11 @@ const getVideoById = asyncHandler(async(req, res)=>{
 
                     
                 ]
-            }
+            },
+
+            
         },
+        
  
         //add fields such as likesCount
         {
@@ -374,7 +378,7 @@ const getVideoById = asyncHandler(async(req, res)=>{
 
         //only pass required fields 
         {
-            $projects :{
+            $project :{
 
                 title : 1, 
                 description :1,
